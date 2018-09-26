@@ -21,8 +21,8 @@
  VERSION 2.20 J. Breecher  - October  2013
 *****************************************************************************/
 
-// #define   LINUX
-#define    WINDOWS
+#define   LINUX
+// #define    WINDOWS
 
 #define  TRUE            1
 #define  FALSE           0

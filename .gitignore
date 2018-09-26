@@ -1,5 +1,8 @@
 # Prerequisites
 *.d
+.cproject
+.project
+.settings
 
 # Object files
 *.o

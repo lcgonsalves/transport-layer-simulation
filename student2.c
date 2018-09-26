@@ -1,6 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
 #include "project2.h"
+#define TIMER_INCREMENT 8
+
+// globals
+int ASeqNum = 0;
+int BSeqNum = 0;
+struct pkt recent_packet;
  
 /* ***************************************************************************
  ALTERNATING BIT AND GO-BACK-N NETWORK EMULATOR: VERSION 1.1  J.F.Kurose
@@ -17,6 +25,25 @@
    Compile as gcc -g project2.c student2.c -o p2
 **********************************************************************/
 
+// ***************** ADDITIONAL HELPERS ******************************/
+
+/**
+ * Does the checksum
+ */
+int checksum(char* target)
+{
+	return 0;
+}
+
+/**
+ * Does a checksum and compares it to the given checksum
+ * of the other packet.
+ */
+int isCorrupt(struct pkt recv_packet)
+{
+	int checksum = recv_packet.checksum;
+	return (~checksum & checksum(recv_packet.payload)); // bitwise & will be zero if they're the same
+}
 
 
 /********* STUDENTS WRITE THE NEXT SEVEN ROUTINES *********/
@@ -35,6 +62,19 @@
  * in-order, and correctly, to the receiving side upper layer.
  */
 void A_output(struct msg message) {
+	// make packet
+	struct pkt packet;
+	packet.acknum 	= -1; // no need for ack because this is the sender side
+	packet.checksum = checksum(message.data); //todo: implement checksum
+	packet.seqnum 	= ASeqNum;
+	packet.payload  = message.data;
+
+	// send to layer 3, save copy if it gets lost
+	recent_packet = packet;
+	toLayer3(AEntity, packet);
+
+	// start timer
+	startTimer(AEntity, TIMER_INCREMENT);
 }
 
 /*
@@ -42,7 +82,7 @@ void A_output(struct msg message) {
  * implementation is bi-directional.
  */
 void B_output(struct msg message)  {
-
+	// not needed - only doing unidirectional
 }
 
 /* 
@@ -52,7 +92,15 @@ void B_output(struct msg message)  {
  * packet is the (possibly corrupted) packet sent from the B-side.
  */
 void A_input(struct pkt packet) {
-
+	// check for corruption and order
+	if (isCorrupt(packet) && packet.acknum == ASeqNum)
+	{
+		// stop timer, advance seqnum
+		stopTimer(AEntity);
+		ASeqNum = !ASeqNum; // since there's only 2 options, either 0 or !0
+	}
+	// if packet is either corrupt or out of order, do nothing
+	// after this, wait for layer 5 call
 }
 
 /*
@@ -62,7 +110,12 @@ void A_input(struct pkt packet) {
  * and stoptimer() in the writeup for how the timer is started and stopped.
  */
 void A_timerinterrupt() {
+	// resend packet
+	printf("Timeout. Resending packet %s\n", recent_packet.payload);
+	toLayer3(AEntity, recent_packet);
 
+	// reset timer
+	startTimer(AEntity, TIMER_INCREMENT);
 }  
 
 /* The following routine will be called once (only) before any other    */
