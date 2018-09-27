@@ -8,7 +8,9 @@
 // globals
 int ASeqNum = 0;
 int BSeqNum = 0;
-struct pkt recent_packet;
+struct pkt A_recent_packet;
+struct pkt B_recent_packet;
+extern TraceLevel;
  
 /* ***************************************************************************
  ALTERNATING BIT AND GO-BACK-N NETWORK EMULATOR: VERSION 1.1  J.F.Kurose
@@ -41,8 +43,9 @@ int checksum(char* target)
  */
 int isCorrupt(struct pkt recv_packet)
 {
-	int checksum = recv_packet.checksum;
-	return (~checksum & checksum(recv_packet.payload)); // bitwise & will be zero if they're the same
+	int csum = recv_packet.checksum;
+	int result = (~csum & checksum(recv_packet.payload)); // bitwise & will be zero if they're the same
+	return result;
 }
 
 
@@ -67,11 +70,11 @@ void A_output(struct msg message) {
 	packet.acknum 	= -1; // no need for ack because this is the sender side
 	packet.checksum = checksum(message.data); //todo: implement checksum
 	packet.seqnum 	= ASeqNum;
-	packet.payload  = message.data;
+	strcpy(message.data, packet.payload);
 
 	// send to layer 3, save copy if it gets lost
-	recent_packet = packet;
-	toLayer3(AEntity, packet);
+	A_recent_packet = packet;
+	tolayer3(AEntity, packet);
 
 	// start timer
 	startTimer(AEntity, TIMER_INCREMENT);
@@ -92,14 +95,21 @@ void B_output(struct msg message)  {
  * packet is the (possibly corrupted) packet sent from the B-side.
  */
 void A_input(struct pkt packet) {
+	if (TraceLevel > 0)
+		printf("A: Received packet: %s with ACKNUM %i. Was expecting %i\n", packet.payload, packet.acknum, ASeqNum);
+
 	// check for corruption and order
-	if (isCorrupt(packet) && packet.acknum == ASeqNum)
+	if (!isCorrupt(packet) && packet.acknum == ASeqNum)
 	{
 		// stop timer, advance seqnum
 		stopTimer(AEntity);
 		ASeqNum = !ASeqNum; // since there's only 2 options, either 0 or !0
+		if (TraceLevel > 0) printf("A: Packet %s is uncorrupted and in order.\nSequence num is now %i\n", packet.payload, ASeqNum);
 	}
 	// if packet is either corrupt or out of order, do nothing
+	else if (TraceLevel > 0)
+			printf("A: Packet %s is out of order or corrupted. Waiting for correct ACK or timeout.\n",
+					packet.payload);
 	// after this, wait for layer 5 call
 }
 
@@ -111,8 +121,8 @@ void A_input(struct pkt packet) {
  */
 void A_timerinterrupt() {
 	// resend packet
-	printf("Timeout. Resending packet %s\n", recent_packet.payload);
-	toLayer3(AEntity, recent_packet);
+	if (TraceLevel > 0) printf("Timeout. Resending packet %s\n", A_recent_packet.payload);
+	tolayer3(AEntity, A_recent_packet);
 
 	// reset timer
 	startTimer(AEntity, TIMER_INCREMENT);
@@ -135,6 +145,40 @@ void A_init() {
  * packet is the (possibly corrupted) packet sent from the A-side.
  */
 void B_input(struct pkt packet) {
+	if (TraceLevel > 0)
+			printf("B: Received packet: %s with ACKNUM %i. Was expecting %i\n", packet.payload, packet.acknum, ASeqNum);
+
+	// check for corruption
+	if (!isCorrupt(packet) && packet.seqnum == BSeqNum)
+	{	// if not currupt and in order
+		// extract data
+		struct msg received_msg;
+		strcpy(packet.payload, received_msg.data);
+
+		// deliver data
+		tolayer5(BEntity, received_msg);
+
+		// send ACK
+		packet.acknum = BSeqNum;
+		tolayer3(BEntity, packet);
+		B_recent_packet = packet;
+
+		// change seqnum
+		BSeqNum = !BSeqNum;
+		if (TraceLevel > 0) printf("B: Packet %s is uncorrupted and in order.\nSequence num is now %i\n", packet.payload, ASeqNum);
+
+	}
+	else {
+		if (TraceLevel > 0){
+			printf("B: Packet %s is out of order or corrupted. Waiting for correct ACK or timeout.\n",
+									packet.payload);
+		}
+
+		// resend ack for old packet
+		tolayer3(BEntity, B_recent_packet);
+
+	}
+
 }
 
 /*

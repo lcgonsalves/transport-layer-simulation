@@ -1,10 +1,22 @@
-all : transportlayersim
+# Makefile for executable adjust
 
-transportlayersim : project.o project2.h
-	gcc -o transportlayersim project.o -Wall -Werror -lpthread
+# *****************************************************
+# Parameters to control Makefile operation
 
-project.o : project2.c project2.h student2.c
-	gcc -c project2.c project2.h student2.c -Wall -Werror
+CC = gcc
+CFLAGS = -Wall -Werror
 
-clean : 
-	rm transportlayersim *.o
+# ****************************************************
+# Entries to bring the executable up to date
+
+all: student2.o project2.o
+	$(CC) $(CFLAGS) -o project2 student2.o project2.o
+
+student2.o: student2.c project2.h
+	$(CC) $(CFLAGS) -c student2.c
+
+project2.o: project2.c project2.h
+	$(CC) $(CFLAGS) -c project2.c
+	
+clean:
+	rm *.o project2
