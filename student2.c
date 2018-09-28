@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdint.h>
 #include "project2.h"
 #include "./linkedlist/linkedlist.h"
 #define TIMER_INCREMENT 1800
@@ -34,35 +35,30 @@ extern int TraceLevel;
 
 /**
  * Does the checksum
+ *
+ * Note: this is a modified implementation of Fletcher16 checksum
+ * found on https://en.wikipedia.org/wiki/Fletcher%27s_checksum#Check_bytes
  */
-int checksum(char* target)
+int checksum(struct pkt packet) // no ref or pointer, so when called a copy of the packet will be made
 {
-	unsigned long sum = 0;
-	// add up all characters to a long
-	for (int i = 0; i < MESSAGE_LENGTH; i++)
+	// set checksum of copy packet to zero so no interference with original checksum
+	packet.checksum = 0;
+	size_t pkt_size = sizeof(struct pkt);
+
+	// cast packet to an array of bytes
+	char* byte_sequence = (char*) &packet;
+	uint16_t sum1 = 0; // could use uint_16 for consistency across platforms
+	uint16_t sum2 = 0;
+	int i;
+
+	// add up all bytes in struct
+	for (i = 0; i < pkt_size; i++)
 	{
-		sum += target[i];
+		sum1 = (sum1 + byte_sequence[i]) % 255;
+		sum2 = (sum2 + sum1) % 255;
 	}
 
-	// count up overflow bits
-	//		-> ...111111100000000 <- 8 bits are zero so we count only overflow
-	unsigned long bit_mask = (~0) << (sizeof(char) * 8);
-	unsigned long overflow = (sum & bit_mask);
-	unsigned int count = 0;
-	while (overflow)
-	{
-		count += overflow & 1; 	// add if last bit is 1
-		overflow >>= 1;			// bit shift right until we reach 0
-	}
-
-	// add overflow bits to final sum
-	sum += count;
-
-	// use inverted mask to "remove" overflow bits
-	sum = (sum & ~bit_mask);
-
-	// ret final count
-	return sum;
+	return (sum2 << 8) | sum1;
 }
 
 /**
@@ -71,15 +67,15 @@ int checksum(char* target)
  */
 int isCorrupt(struct pkt recv_packet)
 {
-	int csum 		= recv_packet.checksum;
-	int new_csum	= checksum(recv_packet.payload);
+	int inv_csum 	= ~recv_packet.checksum;
+	int new_csum	= checksum(recv_packet);
 	if (TraceLevel > 0)
-		printf("Given checksum: 0x%x // New checksum 0x%x\n", csum, new_csum);
+		printf("		Given checksum: 0x%x // New checksum 0x%x\n", ~inv_csum, new_csum);
 
-	int result = (~csum & new_csum); // bitwise & will be zero if they're the same
+	int result = (inv_csum & new_csum); // bitwise & will be zero if they're the same
 
 	if (TraceLevel > 0)
-		printf("Result of comparison is %i\n", result);
+		printf("		Result of comparison is %i\n", result);
 
 	return result;
 }
@@ -104,14 +100,16 @@ void A_output(struct msg message) {
 	// make packet
 	struct pkt packet;
 	memset(&packet, 0, sizeof(packet));
-	packet.acknum 	= -1; // no need for ack because this is the sender side
-	packet.checksum = checksum(message.data); //todo: implement checksum
+	packet.acknum 	= ASeqNum;
 	packet.seqnum 	= ASeqNum;
 	memcpy(packet.payload, message.data, MESSAGE_LENGTH);
+
+	packet.checksum = checksum(packet); // create checksum
 
 	// only do anything if we're not waiting for ack. buffer incoming message
 	if (AWaitingAck)
 	{
+		if (TraceLevel > 1) printf("A: Currently awaiting response, message %s buffered.\n", message.data);
 		struct msg *buffer = (struct msg*) malloc (sizeof(struct msg));
 		memcpy(buffer, &message, sizeof(struct msg));
 		insert_end(A_msg_queue, buffer);
@@ -125,6 +123,8 @@ void A_output(struct msg message) {
 
 	// start timer
 	startTimer(AEntity, TIMER_INCREMENT);
+	if (TraceLevel > 0)
+		printf("A: Timer started, %s sent with SEQ: %i.\n", packet.payload, packet.seqnum);
 }
 
 /*
@@ -142,7 +142,7 @@ void B_output(struct msg message)  {
  * packet is the (possibly corrupted) packet sent from the B-side.
  */
 void A_input(struct pkt packet) {
-	if (TraceLevel > 0)
+	if (TraceLevel > 1)
 		printf("A: Received packet: %s with ACKNUM %i. Was expecting %i\n", packet.payload, packet.acknum, ASeqNum);
 
 	// check for corruption and order
@@ -153,7 +153,7 @@ void A_input(struct pkt packet) {
 		ASeqNum = !ASeqNum; // since there's only 2 options, either 0 or !0
 		if (TraceLevel > 0)
 		{
-			printf("A: Packet %s ACK %i received.\nSequence num is now %i\n",
+			printf("A: Packet %s ACK %i successfully received.\nA: Sequence num is now %i\n",
 				packet.payload,
 				packet.acknum,
 				ASeqNum);
@@ -169,7 +169,7 @@ void A_input(struct pkt packet) {
 		}
 	}
 	// if packet is either corrupt or out of order, do nothing
-	else if (TraceLevel > 0)
+	else if (TraceLevel > 1)
 			printf("A: Packet %s is out of order or corrupted. Waiting for correct ACK or timeout.\n",
 					packet.payload);
 	// after this, wait for layer 5 call
@@ -210,7 +210,12 @@ void A_init() {
  */
 void B_input(struct pkt packet) {
 	if (TraceLevel > 0)
-			printf("B: Received packet: %s with ACKNUM %i. Was expecting %i\n", packet.payload, packet.seqnum, ASeqNum);
+	{
+		printf("B: Received packet: %s with SEQNUM %i. Was expecting %i\n",
+							packet.payload,
+							packet.seqnum,
+							BSeqNum);
+	}
 
 	// check for corruption
 	if (!isCorrupt(packet) && packet.seqnum == BSeqNum)
@@ -223,19 +228,31 @@ void B_input(struct pkt packet) {
 		tolayer5(BEntity, received_msg);
 
 		// send ACK
-		packet.acknum = BSeqNum;
 		tolayer3(BEntity, packet);
 		B_recent_packet = packet;
+		B_recent_packet.acknum = BSeqNum; // done to avoid some cases where the checksum fails to detect errors
 
 		// change seqnum
 		BSeqNum = !BSeqNum;
-		if (TraceLevel > 0) printf("B: Packet %s is uncorrupted and in order.\nSequence num is now %i\n", packet.payload, BSeqNum);
+		if (TraceLevel > 0)
+		{
+			printf("B: Packet %s is uncorrupted and in order.\nB: Sequence num is now %i\n",
+				packet.payload,
+				BSeqNum);
+		}
 
 	}
 	else {
 		if (TraceLevel > 0){
-			printf("B: Packet %s is out of order or corrupted. Waiting for correct ACK or timeout.\n",
-									packet.payload);
+			if (packet.checksum == B_recent_packet.checksum || packet.seqnum == B_recent_packet.seqnum){
+				printf("B: Received recent packet (%s). ACK was corrupted. Re-sending recent packet with ACK: %i.\n",
+													packet.payload,
+													B_recent_packet.acknum);
+			}
+			else
+				printf("B: Packet %s is out of order or corrupted. Sending NAK (ack with value: %i).\n",
+										packet.payload,
+										B_recent_packet.acknum);
 		}
 
 		// resend ack for old packet
@@ -258,5 +275,13 @@ void  B_timerinterrupt() {
  * entity B routines are called. You can use it to do any initialization 
  */
 void B_init() {
+	// set recent packet to something with ack opposite to starting state
+	struct pkt temp;
+	temp.acknum = !BSeqNum;
+	strcpy(temp.payload, "INIT");
+	temp.seqnum = !BSeqNum;
+	temp.checksum = checksum(temp);
+
+	B_recent_packet = temp;
 }
 
