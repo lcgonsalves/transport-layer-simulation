@@ -67,14 +67,14 @@ int checksum(struct pkt packet) // no ref or pointer, so when called a copy of t
  */
 int isCorrupt(struct pkt recv_packet)
 {
-	int inv_csum 	= ~recv_packet.checksum;
+	int csum 		= recv_packet.checksum;
 	int new_csum	= checksum(recv_packet);
-	if (TraceLevel > 0)
-		printf("		Given checksum: 0x%x // New checksum 0x%x\n", ~inv_csum, new_csum);
+	if (TraceLevel > 1)
+		printf("		Given checksum: 0x%x // New checksum 0x%x\n", csum, new_csum);
 
-	int result = (inv_csum & new_csum); // bitwise & will be zero if they're the same
+	int result = csum != new_csum; // bitwise & will be zero if they're the same, can do != as well
 
-	if (TraceLevel > 0)
+	if (TraceLevel > 1)
 		printf("		Result of comparison is %i\n", result);
 
 	return result;
@@ -229,8 +229,7 @@ void B_input(struct pkt packet) {
 
 		// send ACK
 		tolayer3(BEntity, packet);
-		B_recent_packet = packet;
-		B_recent_packet.acknum = BSeqNum; // done to avoid some cases where the checksum fails to detect errors
+		memcpy(&B_recent_packet, &packet, sizeof(struct pkt));
 
 		// change seqnum
 		BSeqNum = !BSeqNum;
