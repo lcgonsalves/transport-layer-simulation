@@ -49,8 +49,8 @@ int checksum(struct pkt packet) // no ref or pointer, so when called a copy of t
 	char* byte_sequence = (char*) &packet;
 	uint16_t sum1 = 0; // could use uint_16 for consistency across platforms
 	uint16_t sum2 = 0;
-	int i;
 
+	int i;
 	// add up all bytes in struct
 	for (i = 0; i < pkt_size; i++)
 	{
