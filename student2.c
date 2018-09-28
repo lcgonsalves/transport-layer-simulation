@@ -8,9 +8,13 @@
 // globals
 int ASeqNum = 0;
 int BSeqNum = 0;
+int AWaitingAck = FALSE;
 struct pkt A_recent_packet;
 struct pkt B_recent_packet;
-extern TraceLevel;
+extern int TraceLevel;
+
+// buffers
+struct pkt A_packet_buf[20];
  
 /* ***************************************************************************
  ALTERNATING BIT AND GO-BACK-N NETWORK EMULATOR: VERSION 1.1  J.F.Kurose
@@ -34,7 +38,32 @@ extern TraceLevel;
  */
 int checksum(char* target)
 {
-	return 0;
+	unsigned long sum = 0;
+	// add up all characters to a long
+	for (int i = 0; i < MESSAGE_LENGTH; i++)
+	{
+		sum += target[i];
+	}
+
+	// count up overflow bits
+	//		-> ...111111100000000 <- 8 bits are zero so we count only overflow
+	unsigned long bit_mask = (~0) << (sizeof(char) * 8);
+	unsigned long overflow = (sum & bit_mask);
+	unsigned int count = 0;
+	while (overflow)
+	{
+		count += overflow & 1; 	// add if last bit is 1
+		overflow >>= 1;			// bit shift right until we reach 0
+	}
+
+	// add overflow bits to final sum
+	sum += count;
+
+	// use inverted mask to "remove" overflow bits
+	sum = (sum & ~bit_mask);
+
+	// ret final count
+	return sum;
 }
 
 /**
@@ -43,8 +72,16 @@ int checksum(char* target)
  */
 int isCorrupt(struct pkt recv_packet)
 {
-	int csum = recv_packet.checksum;
-	int result = (~csum & checksum(recv_packet.payload)); // bitwise & will be zero if they're the same
+	int csum 		= recv_packet.checksum;
+	int new_csum	= checksum(recv_packet.payload);
+	if (TraceLevel > 0)
+		printf("Given checksum: 0x%x // New checksum 0x%x\n", csum, new_csum);
+
+	int result = (~csum & new_csum); // bitwise & will be zero if they're the same
+
+	if (TraceLevel > 0)
+		printf("Result of comparison is %i\n", result);
+
 	return result;
 }
 
@@ -65,16 +102,20 @@ int isCorrupt(struct pkt recv_packet)
  * in-order, and correctly, to the receiving side upper layer.
  */
 void A_output(struct msg message) {
+	// only do anything if we're not waiting for ack. buffer incoming message
+	if (AWaitingAck) return;
 	// make packet
 	struct pkt packet;
+	memset(&packet, 0, sizeof(packet));
 	packet.acknum 	= -1; // no need for ack because this is the sender side
 	packet.checksum = checksum(message.data); //todo: implement checksum
 	packet.seqnum 	= ASeqNum;
-	strcpy(message.data, packet.payload);
+	memcpy(packet.payload, message.data, MESSAGE_LENGTH);
 
 	// send to layer 3, save copy if it gets lost
 	A_recent_packet = packet;
 	tolayer3(AEntity, packet);
+	AWaitingAck = TRUE;
 
 	// start timer
 	startTimer(AEntity, TIMER_INCREMENT);
@@ -104,7 +145,16 @@ void A_input(struct pkt packet) {
 		// stop timer, advance seqnum
 		stopTimer(AEntity);
 		ASeqNum = !ASeqNum; // since there's only 2 options, either 0 or !0
-		if (TraceLevel > 0) printf("A: Packet %s is uncorrupted and in order.\nSequence num is now %i\n", packet.payload, ASeqNum);
+		if (TraceLevel > 0)
+		{
+			printf("A: Packet %s ACK %i received.\nSequence num is now %i\n",
+				packet.payload,
+				packet.acknum,
+				ASeqNum);
+		}
+
+		// now we can send a new packet
+		AWaitingAck = FALSE;
 	}
 	// if packet is either corrupt or out of order, do nothing
 	else if (TraceLevel > 0)
@@ -146,14 +196,14 @@ void A_init() {
  */
 void B_input(struct pkt packet) {
 	if (TraceLevel > 0)
-			printf("B: Received packet: %s with ACKNUM %i. Was expecting %i\n", packet.payload, packet.acknum, ASeqNum);
+			printf("B: Received packet: %s with ACKNUM %i. Was expecting %i\n", packet.payload, packet.seqnum, ASeqNum);
 
 	// check for corruption
 	if (!isCorrupt(packet) && packet.seqnum == BSeqNum)
 	{	// if not currupt and in order
 		// extract data
 		struct msg received_msg;
-		strcpy(packet.payload, received_msg.data);
+		memcpy(received_msg.data, packet.payload, MESSAGE_LENGTH);
 
 		// deliver data
 		tolayer5(BEntity, received_msg);
@@ -176,7 +226,6 @@ void B_input(struct pkt packet) {
 
 		// resend ack for old packet
 		tolayer3(BEntity, B_recent_packet);
-
 	}
 
 }

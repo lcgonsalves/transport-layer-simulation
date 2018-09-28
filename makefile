@@ -4,7 +4,7 @@
 # Parameters to control Makefile operation
 
 CC = gcc
-CFLAGS = -Wall -Werror
+CFLAGS = -Wall -Werror -g
 
 # ****************************************************
 # Entries to bring the executable up to date
