@@ -9,7 +9,7 @@
 ****************************************************/
 
 // change this to modify the type of the payload
-#define PAYLOAD_TYPE void*
+#define PAYLOAD_TYPE struct pkt*
 
 // definition of a node with a payload pointer
 typedef struct node {

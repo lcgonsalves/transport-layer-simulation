@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "project2.h"
+#include "./linkedlist/linkedlist.h"
 #define TIMER_INCREMENT 8
 
 // globals
@@ -11,6 +12,7 @@ int BSeqNum = 0;
 int AWaitingAck = FALSE;
 struct pkt A_recent_packet;
 struct pkt B_recent_packet;
+linkedlist* A_packet_queue;
 extern int TraceLevel;
 
 // buffers

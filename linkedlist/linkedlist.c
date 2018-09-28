@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include "linkedlist.h"
+#include "../project2.h"
 
 /********** SEE HEADER FOR INFO ON EACH METHOD *********************/
 
