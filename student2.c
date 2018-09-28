@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include "project2.h"
 #include "./linkedlist/linkedlist.h"
-#define TIMER_INCREMENT 8
+#define TIMER_INCREMENT 1800
 
 // globals
 int ASeqNum = 0;
@@ -12,11 +12,8 @@ int BSeqNum = 0;
 int AWaitingAck = FALSE;
 struct pkt A_recent_packet;
 struct pkt B_recent_packet;
-linkedlist* A_packet_queue;
+linkedlist* A_msg_queue; // queue
 extern int TraceLevel;
-
-// buffers
-struct pkt A_packet_buf[20];
  
 /* ***************************************************************************
  ALTERNATING BIT AND GO-BACK-N NETWORK EMULATOR: VERSION 1.1  J.F.Kurose
@@ -104,8 +101,6 @@ int isCorrupt(struct pkt recv_packet)
  * in-order, and correctly, to the receiving side upper layer.
  */
 void A_output(struct msg message) {
-	// only do anything if we're not waiting for ack. buffer incoming message
-	if (AWaitingAck) return;
 	// make packet
 	struct pkt packet;
 	memset(&packet, 0, sizeof(packet));
@@ -113,6 +108,15 @@ void A_output(struct msg message) {
 	packet.checksum = checksum(message.data); //todo: implement checksum
 	packet.seqnum 	= ASeqNum;
 	memcpy(packet.payload, message.data, MESSAGE_LENGTH);
+
+	// only do anything if we're not waiting for ack. buffer incoming message
+	if (AWaitingAck)
+	{
+		struct msg *buffer = (struct msg*) malloc (sizeof(struct msg));
+		memcpy(buffer, &message, sizeof(struct msg));
+		insert_end(A_msg_queue, buffer);
+		return; // so packet is not send immediately
+	}
 
 	// send to layer 3, save copy if it gets lost
 	A_recent_packet = packet;
@@ -155,8 +159,14 @@ void A_input(struct pkt packet) {
 				ASeqNum);
 		}
 
-		// now we can send a new packet
+		// now we can send a new packet. check queue
 		AWaitingAck = FALSE;
+		struct msg *queued_msg = pop(A_msg_queue);
+		if (queued_msg)
+		{	// if we have a packet waiting in queue,call output on it
+			A_output(*queued_msg); // pointer dereference = send copy of packet
+			free(queued_msg);
+		}
 	}
 	// if packet is either corrupt or out of order, do nothing
 	else if (TraceLevel > 0)
@@ -173,7 +183,7 @@ void A_input(struct pkt packet) {
  */
 void A_timerinterrupt() {
 	// resend packet
-	if (TraceLevel > 0) printf("Timeout. Resending packet %s\n", A_recent_packet.payload);
+	if (TraceLevel > 0) printf("A: Timeout. Resending packet %s\n", A_recent_packet.payload);
 	tolayer3(AEntity, A_recent_packet);
 
 	// reset timer
@@ -183,6 +193,8 @@ void A_timerinterrupt() {
 /* The following routine will be called once (only) before any other    */
 /* entity A routines are called. You can use it to do any initialization */
 void A_init() {
+	// initialize linked list
+	A_msg_queue = init_linkedlist();
 }
 
 
@@ -217,7 +229,7 @@ void B_input(struct pkt packet) {
 
 		// change seqnum
 		BSeqNum = !BSeqNum;
-		if (TraceLevel > 0) printf("B: Packet %s is uncorrupted and in order.\nSequence num is now %i\n", packet.payload, ASeqNum);
+		if (TraceLevel > 0) printf("B: Packet %s is uncorrupted and in order.\nSequence num is now %i\n", packet.payload, BSeqNum);
 
 	}
 	else {
