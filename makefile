@@ -22,4 +22,4 @@ linkedlist.o: ./linkedlist/linkedlist.c ./linkedlist/linkedlist.h
 	$(CC) $(CFLAGS) -c ./linkedlist/linkedlist.c
 	
 clean:
-	rm *.o project2 *.gch
+	rm *.o project2
