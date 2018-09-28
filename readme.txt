@@ -26,3 +26,12 @@
 ## Current issues ##
 --------------------
 	The code is currently unable to safely and consistently handle corruption in the layer3. High volume, loss, out of order-all of the other possible errors are consistently and safely handled.
+
+
+## CHECKSUM ALGORITHM ##
+---------------------
+
+This program implements the Fletcher-16 algorithm.
+
+It is important to realize that this algorithm is not perfect, meaning
+that some types of corruption may go unnoticed. According to testing, only about 50 out of 100000 corrputions will go unnoticed and reach layer 5. That is an incredibly low (about 0.05%), albeit noticeable fault. Using larger bit checksums could help catch these overflows.

@@ -34,10 +34,17 @@ extern int TraceLevel;
 // ***************** ADDITIONAL HELPERS ******************************/
 
 /**
- * Does the checksum
+ * Creates a Fletchet-16bit checksum of the entire packet minus the checksum field
+ * (which is reset to 0 for the purpose of this algorithm)
  *
  * Note: this is a modified implementation of Fletcher16 checksum
  * found on https://en.wikipedia.org/wiki/Fletcher%27s_checksum#Check_bytes
+ *
+ * It is important to realize that this algorithm is not perfect, meaning
+ * that some types of corruption may go unnoticed. According to testing, only about
+ * 50 out of 100000 corrputions will go unnoticed and reach layer 5. That is an
+ * incredibly low (about 0.05%), albeit noticeable fault. Using larger bit checksums
+ * could help catch these overflows.
  */
 int checksum(struct pkt packet) // no ref or pointer, so when called a copy of the packet will be made
 {
