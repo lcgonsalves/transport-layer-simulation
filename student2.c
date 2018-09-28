@@ -39,7 +39,8 @@ int checksum(char* target)
 {
 	unsigned long sum = 0;
 	// add up all characters to a long
-	for (int i = 0; i < MESSAGE_LENGTH; i++)
+	int i;
+	for (i = 0; i < MESSAGE_LENGTH; i++)
 	{
 		sum += target[i];
 	}
